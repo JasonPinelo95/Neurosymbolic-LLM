@@ -206,19 +206,28 @@ from llama.generation import sample_top_p
 from llama.encoder_decoder_networks import Encoder, Decoder, Encoder_Deep, Decoder_Deep
 from llama.vsa_engine import *
 from llama.utilities import *
+from llama.device_utils import (
+    get_device,
+    get_device_type,
+    setup_device_environment,
+    print_device_info,
+)
 
 from llama import Dialog, Llama
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(torch.cuda.get_device_name(torch.cuda.current_device()))
+# Auto-detect device (CUDA, MPS, or CPU)
+device = get_device()
+device_type = get_device_type()
+print_device_info()
+
+# Setup device-specific environment variables
+setup_device_environment()
 
 os.environ['RANK'] = "0"
 os.environ['WORLD_SIZE'] = "1"
-os.environ['MASTER_ADDR'] = "127.0.0.2"
+os.environ['MASTER_ADDR'] = "localhost"
 os.environ['MASTER_PORT'] = master_port
 os.environ['LOCAL_RANK']  = "0"
-os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-os.environ['TORCH_USE_CUDA_DSA'] = '1'
 
 generator = Llama.build(
     ckpt_dir=ckpt_dir,

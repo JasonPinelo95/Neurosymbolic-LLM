@@ -1,3 +1,8 @@
+# === Paths ===
+ckpt_dir: "/Volumes/KINGSTON/.llama/checkpoints/Llama3.1-8B-Instruct/original"
+tokenizer_path: "/Volumes/KINGSTON/.llama/checkpoints/Llama3.1-8B-Instruct/original/tokenizer.model"
+
+# === Model Config ===
 max_seq_len: 10000
 max_batch_size: 2
 model_parallel_size: 1

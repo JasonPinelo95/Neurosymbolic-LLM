@@ -1,8 +1,8 @@
 # === Paths ===
-curr_dir: "~/Neurosymbolic-LLM/Programs"
-git_dir: "~/Neurosymbolic-LLM"
-ckpt_dir: "~/.llama/checkpoints/Llama3.1-8B-Instruct"
-tokenizer_path: "~/.llama/checkpoints/Llama3.1-8B-Instruct/tokenizer.model"
+curr_dir: "/Volumes/KINGSTON/Neurosymbolic-LLM/Programs"
+git_dir: "/Volumes/KINGSTON/Neurosymbolic-LLM"
+ckpt_dir: "/Volumes/KINGSTON/.llama/checkpoints/Llama3.1-8B-Instruct/original"
+tokenizer_path: "/Volumes/KINGSTON/.llama/checkpoints/Llama3.1-8B-Instruct/original/tokenizer.model"
 generate_data: 1
 log_wandb: 1
 gpu_seed: 0

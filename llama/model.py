@@ -17,6 +17,7 @@ from fairscale.nn.model_parallel.layers import (
 from torch import nn
 
 from llama.vsa_engine import SymbolicEngine, bind
+from llama.device_utils import get_device, to_device
 
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader, RandomSampler
@@ -131,22 +132,22 @@ class Attention(nn.Module):
             init_method=lambda x: x,
         )
 
-        self.cache_k = torch.zeros(
+        self.cache_k = to_device(torch.zeros(
             (
                 args.max_batch_size,
                 args.max_seq_len,
                 self.n_local_kv_heads,
                 self.head_dim,
             )
-        ).cuda()
-        self.cache_v = torch.zeros(
+        ))
+        self.cache_v = to_device(torch.zeros(
             (
                 args.max_batch_size,
                 args.max_seq_len,
                 self.n_local_kv_heads,
                 self.head_dim,
             )
-        ).cuda()
+        ))
 
     def forward(
         self,

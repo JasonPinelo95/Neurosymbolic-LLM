@@ -17,18 +17,29 @@ from llama.encoder_decoder_networks import *
 def make_unitary(v):
     """
     Makes input unitary (Fourier components have magnitude of 1)
+    Note: FFT with double precision is done on CPU for MPS compatibility
+    Returns float32 to ensure MPS compatibility
     """
-    fv = torch.fft.fft(v.double(), axis=1)
+    original_device = v.device
+    # Move to CPU for double precision FFT (MPS doesn't support float64)
+    v_cpu = v.cpu().double()
+    fv = torch.fft.fft(v_cpu, axis=1)
     fv = fv/torch.sqrt(fv.real**2 + fv.imag**2)
-    return torch.fft.ifft(fv, axis=1).real.type_as(v)
+    result = torch.fft.ifft(fv, axis=1).real
+    # Return as float32 since MPS doesn't support float64
+    return result.float().to(original_device)
 
 def make_tensor_unitary(v):
     """
     Makes input tensor unitary (Fourier components have magnitude of 1)
+    Note: Uses CPU for better precision with FFT. Returns float32 for MPS compatibility.
     """
-    fv = torch.fft.fft(v, axis=1)
+    original_device = v.device
+    v_cpu = v.cpu()
+    fv = torch.fft.fft(v_cpu, axis=1)
     fv = fv/torch.sqrt(fv.real**2 + fv.imag**2)
-    return torch.fft.ifft(fv, axis=1).real
+    result = torch.fft.ifft(fv, axis=1).real
+    return result.float().to(original_device)
 
 def invert(a, dim):
     """
@@ -336,11 +347,13 @@ class SymbolicEngine():
             digit_scores = torch.sigmoid(k * (digit_scores - similarity_threshold))
             modified_digit_values = digit_values * digit_scores.unsqueeze(1)
             
-            exponents = torch.tensor([10**d for d in range(len(self.digits))], dtype=torch.float32)
-            nums = torch.arange(0, 10, dtype=torch.float32)
+            exponents = torch.tensor([10**d for d in range(len(self.digits))], dtype=torch.float32, device='cpu')
+            nums = torch.arange(0, 10, dtype=torch.float32, device='cpu')
 
             # The i loop iterates over the different digits, and the j loop iterates over the different batch elements
-            decoded_VSAs = torch.stack([sum([(exponents[i] * torch.dot(nums.double(), modified_digit_values[j,:,i].double()))
+            # Note: Using CPU for double precision operations (MPS doesn't support float64)
+            modified_digit_values_cpu = modified_digit_values.cpu()
+            decoded_VSAs = torch.stack([sum([(exponents[i] * torch.dot(nums.double(), modified_digit_values_cpu[j,:,i].double()))
                                             for i in range(self.max_digits)])
                                     for j in range(batch_size)]).to(VSA.device)
 

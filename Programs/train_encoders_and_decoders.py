@@ -193,6 +193,13 @@ sys.path.insert(0, git_dir)
 from llama.encoder_decoder_networks import Encoder, Decoder, Encoder_Deep, Decoder_Deep, LastTokenTransformer
 from llama.vsa_engine import *
 from llama.utilities import *
+from llama.device_utils import (
+    get_device,
+    get_device_type,
+    get_device_name,
+    setup_device_environment,
+    print_device_info,
+)
 
 from llama import Llama
 
@@ -214,17 +221,20 @@ if log_wandb:
 
 print("Run:", run_name)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Current device:", torch.cuda.get_device_name(torch.cuda.current_device()))
+# Auto-detect device (CUDA, MPS, or CPU)
+device = get_device()
+device_type = get_device_type()
+print_device_info()
+
+# Setup device-specific environment variables
+setup_device_environment()
 
 if generate_data:
     os.environ['RANK'] = "0"
     os.environ['WORLD_SIZE'] = "1"
-    os.environ['MASTER_ADDR'] = "127.0.0.2"
+    os.environ['MASTER_ADDR'] = "localhost"
     os.environ['MASTER_PORT'] = master_port
     os.environ['LOCAL_RANK']  = "0"
-    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-    os.environ['TORCH_USE_CUDA_DSA'] = "1"
 
     generator = Llama.build(
         ckpt_dir=ckpt_dir,
@@ -236,12 +246,16 @@ if generate_data:
     for param in generator.model.parameters():
         param.requires_grad = False
 else:
-    if torch.cuda.is_bf16_supported():
+    # Set default dtype based on device capabilities
+    if device_type == "cuda" and torch.cuda.is_bf16_supported():
+        torch.set_default_dtype(torch.bfloat16)
+    elif device_type == "mps":
+        # MPS supports bfloat16 on Apple Silicon
         torch.set_default_dtype(torch.bfloat16)
     else:
         torch.set_default_dtype(torch.float16)
 
-    torch.set_default_device("cuda")
+    torch.set_default_device(device_type)
 
 possible_problems_str = "_".join(possible_problems)
 

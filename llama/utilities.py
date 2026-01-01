@@ -33,6 +33,7 @@ from typing import List
 
 from llama import Dialog
 from llama.generation import sample_top_p
+from llama.device_utils import get_device, to_device, get_generator
 
 
 class EncoderDataset(Dataset):
@@ -849,8 +850,9 @@ def generate_data_loaders(mode, save_dir, data_rounds, save_frequency, layer_num
         numbers_stacked = torch.cat(correct_sps_data, dim=0)
 
         # Create `EncoderDataset` and `DataLoader` for the current layer
-        encoder_training_data = EncoderDataset(h_layer_stacked.cuda(), numbers_stacked.cuda())
-        gpu_generator = torch.Generator(device='cuda')
+        device = get_device()
+        encoder_training_data = EncoderDataset(to_device(h_layer_stacked), to_device(numbers_stacked))
+        gpu_generator = get_generator(device)
         if gpu_seed:
             gpu_generator.manual_seed(42)
 
@@ -861,7 +863,7 @@ def generate_data_loaders(mode, save_dir, data_rounds, save_frequency, layer_num
             generator=gpu_generator,
         )
         encoder_data_loaders.append(encoder_data_loader)
-        
+
     return encoder_data_loaders
 
 def generate_data_without_saving(generator, rounds, mode, complexity,
@@ -962,8 +964,9 @@ def generate_data_without_saving(generator, rounds, mode, complexity,
             h_layer_stacked = h_stacked[:, -tokens_to_keep:, :, n_layer]
 
         # Create `EncoderDataset` and `DataLoader` for the current layer
-        encoder_training_data = EncoderDataset(h_layer_stacked.cuda(), numbers_stacked.cuda())
-        gpu_generator = torch.Generator(device='cuda')
+        device = get_device()
+        encoder_training_data = EncoderDataset(to_device(h_layer_stacked), to_device(numbers_stacked))
+        gpu_generator = get_generator(device)
         if gpu_seed:
             gpu_generator.manual_seed(42)
 
@@ -974,7 +977,7 @@ def generate_data_without_saving(generator, rounds, mode, complexity,
             generator=gpu_generator,
         )
         encoder_data_loaders.append(encoder_data_loader)
-        
+
     return encoder_data_loaders
 
 
