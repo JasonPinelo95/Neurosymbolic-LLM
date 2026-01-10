@@ -87,7 +87,7 @@ class Llama:
             checkpoints
         ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {model_parallel_size}"
         ckpt_path = checkpoints[get_model_parallel_rank()]
-        checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+        checkpoint = torch.load(ckpt_path, map_location="cpu")
         with open(Path(ckpt_dir) / "params.json", "r") as f:
             params = json.loads(f.read())
 
@@ -103,7 +103,7 @@ class Llama:
         else:
             torch.set_default_dtype(torch.float16)
 
-        torch.set_default_device("cuda")
+        #torch.set_default_device("cuda")
         model = Transformer(model_args)
         model.model_args = model_args
         model.load_state_dict(checkpoint, strict=False)

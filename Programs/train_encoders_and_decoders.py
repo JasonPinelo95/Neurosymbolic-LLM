@@ -218,13 +218,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Current device:", torch.cuda.get_device_name(torch.cuda.current_device()))
 
 if generate_data:
-    os.environ['RANK'] = "0"
-    os.environ['WORLD_SIZE'] = "1"
-    os.environ['MASTER_ADDR'] = "127.0.0.2"
-    os.environ['MASTER_PORT'] = master_port
-    os.environ['LOCAL_RANK']  = "0"
-    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-    os.environ['TORCH_USE_CUDA_DSA'] = "1"
+    if 'RANK' not in os.environ:
+        os.environ['RANK'] = "0"
+        os.environ['WORLD_SIZE'] = "1"
+        os.environ['MASTER_ADDR'] = "127.0.0.2"
+        os.environ['MASTER_PORT'] = master_port
+        os.environ['LOCAL_RANK']  = "0"
+        os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+        os.environ['TORCH_USE_CUDA_DSA'] = "1"
 
     generator = Llama.build(
         ckpt_dir=ckpt_dir,
@@ -241,13 +242,13 @@ else:
     else:
         torch.set_default_dtype(torch.float16)
 
-    torch.set_default_device("cuda")
+    #torch.set_default_device("cuda")
 
 possible_problems_str = "_".join(possible_problems)
 
 if os.path.exists(f"{curr_dir}/VSA_library/symbolic_engine_VSA_dim_{VSA_dim}_max_digits_{max_digits}_problem_types_{possible_problems_str}.pt"):
     SE = torch.load(f"{curr_dir}/VSA_library/symbolic_engine_VSA_dim_{VSA_dim}"
-                    f"_max_digits_{max_digits}_problem_types_{possible_problems_str}.pt", weights_only=False)
+                    f"_max_digits_{max_digits}_problem_types_{possible_problems_str}.pt")
     print("Using pre-existing Semantic Engine object")
 else:
     SE = SymbolicEngine(VSA_dim=VSA_dim, max_digits=max_digits, possible_problems=possible_problems, 

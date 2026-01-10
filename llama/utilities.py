@@ -584,15 +584,15 @@ def episode(generator, dialogs, temperature=0.0, top_p=0.9, inference_mode=None,
     total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
 
     pad_id = generator.tokenizer.pad_id
-    tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long)
+    tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long).cuda()
     for k, t in enumerate(prompt_tokens):
         tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long)
 
     prev_pos = 0
-    eos_reached = torch.tensor([False] * bsz)
-    input_text_mask = tokens != pad_id
+    eos_reached = torch.tensor([False] * bsz).cuda()
+    input_text_mask = (tokens != pad_id).cuda()
 
-    stop_tokens = torch.tensor(list(generator.tokenizer.stop_tokens))
+    stop_tokens = torch.tensor(list(generator.tokenizer.stop_tokens)).cuda()
 
     transitions = []
     curr_token = 0
@@ -827,8 +827,8 @@ def generate_data_loaders(mode, save_dir, data_rounds, save_frequency, layer_num
             if not r % save_frequency and r:
                 if verbose:
                     print("On Round Number:", r)
-                h_stack = torch.load(os.path.join(save_dir, f"{h_path}{r}.pt"), weights_only=True)
-                correct_sps = torch.load(os.path.join(save_dir, f"{sp_path}{r}.pt"), weights_only=True)
+                h_stack = torch.load(os.path.join(save_dir, f"{h_path}{r}.pt"))
+                correct_sps = torch.load(os.path.join(save_dir, f"{sp_path}{r}.pt"))
 
                 # Collect data for the specific layer
                 if   tokens_to_keep == "all":

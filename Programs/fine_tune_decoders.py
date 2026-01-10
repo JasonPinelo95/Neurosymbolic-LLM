@@ -232,7 +232,7 @@ possible_problems_str = "_".join(possible_problems)
 
 if os.path.exists(f"{curr_dir}/VSA_library/symbolic_engine_VSA_dim_{VSA_dim}_max_digits_{max_digits}_problem_types_{possible_problems_str}.pt"):
     SE = torch.load(f"{curr_dir}/VSA_library/symbolic_engine_VSA_dim_{VSA_dim}"
-                    f"_max_digits_{max_digits}_problem_types_{possible_problems_str}.pt", weights_only=False)
+                    f"_max_digits_{max_digits}_problem_types_{possible_problems_str}.pt")
 else:
     print("Warning: Existing Symbolic Engine object not found, creating new Symbolic Engine...")
     SE = SymbolicEngine(VSA_dim=VSA_dim, max_digits=max_digits, possible_problems=possible_problems, 
@@ -241,7 +241,7 @@ else:
 
 
 generator.model.SE = torch.load(f"{curr_dir}/VSA_library/symbolic_engine_VSA_dim_{VSA_dim}"
-                                f"_max_digits_{max_digits}_problem_types_{possible_problems_str}.pt", weights_only=False)
+                                f"_max_digits_{max_digits}_problem_types_{possible_problems_str}.pt")
 
 
 def get_dialog_indices(generator, dialog, calculate_end_index=False):
@@ -918,8 +918,8 @@ def run_experiment(generator, config):
 
 
     if not initialize_lora:
-        generator.model.encoders = torch.load(encoder_path, weights_only=False) 
-        generator.model.decoders = torch.load(decoder_path, weights_only=False)
+        generator.model.encoders = torch.load(encoder_path) 
+        generator.model.decoders = torch.load(decoder_path)
 
     if lora_baseline:
         lora_encoders = nn.ModuleList()
@@ -940,8 +940,8 @@ def run_experiment(generator, config):
         # rms_layer = True
 
     if initialize_lora:
-        generator.model.encoders = torch.load(encoder_path, weights_only=False)
-        generator.model.decoders = torch.load(decoder_path, weights_only=False)
+        generator.model.encoders = torch.load(encoder_path)
+        generator.model.decoders = torch.load(decoder_path)
 
     generator.model.wandb_run_id                = wandb.run.id
 
