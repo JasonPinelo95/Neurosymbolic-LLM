@@ -291,7 +291,7 @@ class Transformer(nn.Module):
         if seqlen > 1:
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
 
-            mask = torch.triu(mask, diagonal=1)
+            mask = torch.triu(mask.float(), diagonal=1).type_as(h)
 
             # When performing key-value caching, we compute the attention scores
             # only for the new sequence. Thus, the matrix of scores is of size
@@ -302,10 +302,10 @@ class Transformer(nn.Module):
             ).type_as(h)
         h_stack = []
         for n, layer in enumerate(self.layers):
-            h_stack += [h.clone()]
+            h_stack += [h.clone().cpu()]
             h = layer(h, start_pos, freqs_cis, mask)
         h = self.norm(h)
-        h_stack += [h.clone()]
+        h_stack += [h.clone().cpu()]
         h_stack = torch.stack(h_stack)
         #print(h_stack.shape, h.shape)
         output = self.output(h).float()
@@ -323,7 +323,7 @@ class Transformer(nn.Module):
         mask = None
         if seqlen > 1:
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
-            mask = torch.triu(mask, diagonal=1)
+            mask = torch.triu(mask.float(), diagonal=1).type_as(h)
             mask = torch.hstack(
                 [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
             ).type_as(h)
@@ -706,7 +706,7 @@ class Transformer(nn.Module):
         if seqlen > 1:
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
 
-            mask = torch.triu(mask, diagonal=1)
+            mask = torch.triu(mask.float(), diagonal=1).type_as(h)
 
             # When performing key-value caching, we compute the attention scores
             # only for the new sequence. Thus, the matrix of scores is of size
