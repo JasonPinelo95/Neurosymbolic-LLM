@@ -1,8 +1,8 @@
 max_seq_len: 10000
 max_batch_size: 2
-model_parallel_size: 1
+model_parallel_size: 2
 max_digits: 5
-VSA_dim: 2048
+VSA_dim: 8192
 possible_problems: ["addition", "multiplication", "division", "modulo", "gcd", "lcm", "square_mod", "bitwise_and", "bitwise_xor", "bitwise_or"]
 
 encoder_path: ""
