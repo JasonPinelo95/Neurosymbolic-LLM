@@ -737,18 +737,31 @@ def episode(generator, dialogs, temperature=0.0, top_p=0.9, inference_mode=None,
 def gather_h_stacks(generator, SE, dialog_data, temperature=0, produce_correct_VSA=False):
     dialogs = dialog_data[0]
 
+    # === CRITICAL FIX: Extract x, y, problem_type and pass to episode() ===
+    # Previously episode() was called without curr_pt, curr_x, curr_y parameters,
+    # so it defaulted to curr_pt="addition", curr_x=0, curr_y=0
+    # This caused different GPUs to have different forward pass behavior -> deadlock
+    x = dialog_data[1]
+    y = dialog_data[2]
+    problem_type = dialog_data[3]
+
+    # Pass the first sample's values (assuming n_samples >= 1)
+    curr_x = x[0] if len(x) > 0 else 0
+    curr_y = y[0] if len(y) > 0 else 0
+    curr_pt = problem_type
+
     h_stacks, list_of_probs, list_of_logits, out_tokens = episode(generator, dialogs, temperature=temperature,
-                                                                  inference_mode=generator.model.forward, 
+                                                                  inference_mode=generator.model.forward,
                                                                   max_decoding_length=1,
+                                                                  curr_pt=curr_pt,
+                                                                  curr_x=curr_x,
+                                                                  curr_y=curr_y,
                                                                   )
-    
+
     # shape of h_stack is [num_layers, batch_size, num_tokens, hidden_dm], per output token
-    
+
 
     if produce_correct_VSA:
-        x       = dialog_data[1]
-        y       = dialog_data[2]
-        problem_type = dialog_data[3]
         correct_VSAs = []
         for n in range(len(x)):
             correct_VSA   = SE.generate_VSA_old(x[n], y[n], problem_type).to(torch.bfloat16)
