@@ -92,6 +92,24 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     )
 
 
+# === GLOBAL FILE LOGGING SETUP ===
+def _get_log_function():
+    """Get file logging function for this GPU"""
+    import os
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    log_file = os.path.join(repo_root, f"gpu_{local_rank}_debug.log")
+
+    def log(msg):
+        """Write log message to file for this GPU"""
+        with open(log_file, "a") as f:
+            f.write(f"{msg}\n")
+            f.flush()
+    return log
+
+_log = _get_log_function()
+
+
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
@@ -155,7 +173,6 @@ class Attention(nn.Module):
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
     ):
-        # === DEBUG LOGGING ===
         import os
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         debug = start_pos > 0  # Log for ALL GPUs when using cache
@@ -163,29 +180,29 @@ class Attention(nn.Module):
         bsz, seqlen, _ = x.shape
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Input: bsz={bsz}, seqlen={seqlen}, start_pos={start_pos}")
-            print(f"  [ATTENTION GPU {local_rank}] Step 1: Computing Q, K, V projections (ColumnParallel - all-gather)...")
+            _log(f"  [ATTENTION GPU {local_rank}] Input: bsz={bsz}, seqlen={seqlen}, start_pos={start_pos}")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 1: Computing Q, K, V projections (ColumnParallel - all-gather)...")
 
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 1 DONE: xq.shape={xq.shape}, xk.shape={xk.shape}, xv.shape={xv.shape}")
-            print(f"  [ATTENTION GPU {local_rank}] Step 2: Reshaping Q, K, V...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 1 DONE: xq.shape={xq.shape}, xk.shape={xk.shape}, xv.shape={xv.shape}")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 2: Reshaping Q, K, V...")
 
         xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 2 DONE")
-            print(f"  [ATTENTION GPU {local_rank}] Step 3: Applying rotary embeddings...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 2 DONE")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 3: Applying rotary embeddings...")
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 3 DONE")
-            print(f"  [ATTENTION GPU {local_rank}] Step 4: Updating KV cache...")
-            print(f"  [ATTENTION GPU {local_rank}]   Cache update: cache[:{bsz}, {start_pos}:{start_pos + seqlen}]")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 3 DONE")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 4: Updating KV cache...")
+            _log(f"  [ATTENTION GPU {local_rank}]   Cache update: cache[:{bsz}, {start_pos}:{start_pos + seqlen}]")
 
         self.cache_k = self.cache_k.to(xq)
         self.cache_v = self.cache_v.to(xq)
@@ -194,69 +211,62 @@ class Attention(nn.Module):
         self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv.detach()
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 4 DONE")
-            print(f"  [ATTENTION GPU {local_rank}] Step 5: Retrieving cached keys/values...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 4 DONE")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 5: Retrieving cached keys/values...")
 
         keys = self.cache_k[:bsz, : start_pos + seqlen]
         values = self.cache_v[:bsz, : start_pos + seqlen]
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 5 DONE: keys.shape={keys.shape}, values.shape={values.shape}")
-            print(f"  [ATTENTION GPU {local_rank}] Step 6: Repeating KV heads (n_rep={self.n_rep})...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 5 DONE: keys.shape={keys.shape}, values.shape={values.shape}")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 6: Repeating KV heads (n_rep={self.n_rep})...")
 
-        # repeat k/v heads if n_kv_heads < n_heads
-        keys = repeat_kv(
-            keys, self.n_rep
-        )  # (bs, cache_len + seqlen, n_local_heads, head_dim)
-        values = repeat_kv(
-            values, self.n_rep
-        )  # (bs, cache_len + seqlen, n_local_heads, head_dim)
+        keys = repeat_kv(keys, self.n_rep)
+        values = repeat_kv(values, self.n_rep)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 6 DONE: keys.shape={keys.shape}, values.shape={values.shape}")
-            print(f"  [ATTENTION GPU {local_rank}] Step 7: Transposing tensors...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 6 DONE: keys.shape={keys.shape}, values.shape={values.shape}")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 7: Transposing tensors...")
 
-        xq = xq.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        keys = keys.transpose(1, 2)  # (bs, n_local_heads, cache_len + seqlen, head_dim)
-        values = values.transpose(
-            1, 2
-        )  # (bs, n_local_heads, cache_len + seqlen, head_dim)
+        xq = xq.transpose(1, 2)
+        keys = keys.transpose(1, 2)
+        values = values.transpose(1, 2)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 7 DONE")
-            print(f"  [ATTENTION GPU {local_rank}] Step 8: Computing attention scores (matmul Q @ K^T)...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 7 DONE")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 8: Computing attention scores (matmul Q @ K^T)...")
 
         scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 8 DONE: scores.shape={scores.shape}")
-            print(f"  [ATTENTION GPU {local_rank}] Step 9: Applying mask and softmax...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 8 DONE: scores.shape={scores.shape}")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 9: Applying mask and softmax...")
 
         if mask is not None:
-            scores = scores + mask  # (bs, n_local_heads, seqlen, cache_len + seqlen)
+            scores = scores + mask
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 9 DONE")
-            print(f"  [ATTENTION GPU {local_rank}] Step 10: Computing attention output (matmul scores @ V)...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 9 DONE")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 10: Computing attention output (matmul scores @ V)...")
 
-        output = torch.matmul(scores, values)  # (bs, n_local_heads, seqlen, head_dim)
+        output = torch.matmul(scores, values)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 10 DONE: output.shape={output.shape}")
-            print(f"  [ATTENTION GPU {local_rank}] Step 11: Reshaping output...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 10 DONE: output.shape={output.shape}")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 11: Reshaping output...")
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 11 DONE: output.shape={output.shape}")
-            print(f"  [ATTENTION GPU {local_rank}] Step 12: CRITICAL - Calling wo (RowParallelLinear with all-reduce)...")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 11 DONE: output.shape={output.shape}")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 12: CRITICAL - Calling wo (RowParallelLinear with all-reduce)...")
 
         result = self.wo(output)
 
         if debug:
-            print(f"  [ATTENTION GPU {local_rank}] Step 12 DONE: result.shape={result.shape}")
-            print(f"  [ATTENTION GPU {local_rank}] === Attention sublayer complete ===")
+            _log(f"  [ATTENTION GPU {local_rank}] Step 12 DONE: result.shape={result.shape}")
+            _log(f"  [ATTENTION GPU {local_rank}] === Attention sublayer complete ===")
 
         return result
 
@@ -287,31 +297,30 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x):
-        # === DEBUG LOGGING ===
         import os
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         debug = (x.shape[1] == 1)  # Log for ALL GPUs in single token (cache mode)
 
         if debug:
-            print(f"  [FEEDFORWARD GPU {local_rank}] Input: x.shape={x.shape}")
-            print(f"  [FEEDFORWARD GPU {local_rank}] Computing w1(x) and w3(x) (ColumnParallel - all-gather)...")
+            _log(f"  [FEEDFORWARD GPU {local_rank}] Input: x.shape={x.shape}")
+            _log(f"  [FEEDFORWARD GPU {local_rank}] Computing w1(x) and w3(x) (ColumnParallel - all-gather)...")
 
         w1_out = self.w1(x)
         w3_out = self.w3(x)
 
         if debug:
-            print(f"  [FEEDFORWARD GPU {local_rank}] w1 and w3 done, applying SiLU and element-wise multiply...")
+            _log(f"  [FEEDFORWARD GPU {local_rank}] w1 and w3 done, applying SiLU and element-wise multiply...")
 
         intermediate = F.silu(w1_out) * w3_out
 
         if debug:
-            print(f"  [FEEDFORWARD GPU {local_rank}] CRITICAL - Calling w2 (RowParallelLinear with all-reduce)...")
+            _log(f"  [FEEDFORWARD GPU {local_rank}] CRITICAL - Calling w2 (RowParallelLinear with all-reduce)...")
 
         result = self.w2(intermediate)
 
         if debug:
-            print(f"  [FEEDFORWARD GPU {local_rank}] w2 done, result.shape={result.shape}")
-            print(f"  [FEEDFORWARD GPU {local_rank}] === FeedForward sublayer complete ===")
+            _log(f"  [FEEDFORWARD GPU {local_rank}] w2 done, result.shape={result.shape}")
+            _log(f"  [FEEDFORWARD GPU {local_rank}] === FeedForward sublayer complete ===")
 
         return result
 
@@ -340,26 +349,25 @@ class TransformerBlock(nn.Module):
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
     ):
-        # === DEBUG LOGGING ===
         import os
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         debug = start_pos > 0  # Log for ALL GPUs when using cache
 
         if debug:
-            print(f"[LAYER {self.layer_id} GPU {local_rank}] Starting layer forward pass")
-            print(f"[LAYER {self.layer_id} GPU {local_rank}] 1. Calling Attention sublayer...")
+            _log(f"[LAYER {self.layer_id} GPU {local_rank}] Starting layer forward pass")
+            _log(f"[LAYER {self.layer_id} GPU {local_rank}] 1. Calling Attention sublayer...")
 
         h = x + self.attention(self.attention_norm(x), start_pos, freqs_cis, mask)
 
         if debug:
-            print(f"[LAYER {self.layer_id} GPU {local_rank}] 1. Attention sublayer DONE")
-            print(f"[LAYER {self.layer_id} GPU {local_rank}] 2. Calling FeedForward sublayer...")
+            _log(f"[LAYER {self.layer_id} GPU {local_rank}] 1. Attention sublayer DONE")
+            _log(f"[LAYER {self.layer_id} GPU {local_rank}] 2. Calling FeedForward sublayer...")
 
         out = h + self.feed_forward(self.ffn_norm(h))
 
         if debug:
-            print(f"[LAYER {self.layer_id} GPU {local_rank}] 2. FeedForward sublayer DONE")
-            print(f"[LAYER {self.layer_id} GPU {local_rank}] Layer {self.layer_id} complete\n")
+            _log(f"[LAYER {self.layer_id} GPU {local_rank}] 2. FeedForward sublayer DONE")
+            _log(f"[LAYER {self.layer_id} GPU {local_rank}] Layer {self.layer_id} complete\n")
 
         return out
 
@@ -398,75 +406,65 @@ class Transformer(nn.Module):
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         world_size = int(os.environ.get("WORLD_SIZE", 1))
 
-        # === FILE LOGGING SETUP - All logs to repository root ===
-        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        log_file = os.path.join(repo_root, f"gpu_{local_rank}_debug.log")
-
-        def log(msg):
-            """Write log message to file for this GPU"""
-            with open(log_file, "a") as f:
-                f.write(f"{msg}\n")
-                f.flush()
-
         start_time = time.time()
-        log(f"\n[GPU {local_rank}] ========== FORWARD PASS START ==========")
-        log(f"[GPU {local_rank}] tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}")
-        log(f"[GPU {local_rank}] return_h_stack={return_h_stack}")
-        log(f"[GPU {local_rank}] Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        _log(f"\n[GPU {local_rank}] ========== FORWARD PASS START ==========")
+        _log(f"[GPU {local_rank}] tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}")
+        _log(f"[GPU {local_rank}] return_h_stack={return_h_stack}")
+        _log(f"[GPU {local_rank}] Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         _bsz, seqlen = tokens.shape
 
-        log(f"[GPU {local_rank}] Step 1: Computing embeddings...")
+        _log(f"[GPU {local_rank}] Step 1: Computing embeddings...")
         h = self.tok_embeddings(tokens)
-        log(f"[GPU {local_rank}] After embeddings: h.shape={h.shape}, dtype={h.dtype}, device={h.device}")
+        _log(f"[GPU {local_rank}] After embeddings: h.shape={h.shape}, dtype={h.dtype}, device={h.device}")
 
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
         mask = None
         if seqlen > 1:
-            log(f"[GPU {local_rank}] Creating attention mask for seqlen={seqlen}")
+            _log(f"[GPU {local_rank}] Creating attention mask for seqlen={seqlen}")
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
             mask = torch.triu(mask.float(), diagonal=1).type_as(h)
             mask = torch.hstack(
                 [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
             ).type_as(h)
-            log(f"[GPU {local_rank}] Mask created: shape={mask.shape}")
+            _log(f"[GPU {local_rank}] Mask created: shape={mask.shape}")
 
         h_stack = []
-        log(f"[GPU {local_rank}] Step 2: Processing {len(self.layers)} transformer layers...")
+        _log(f"[GPU {local_rank}] Step 2: Processing {len(self.layers)} transformer layers...")
 
         for n, layer in enumerate(self.layers):
             if n % 10 == 0:  # Log every 10 layers
-                log(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
+                _log(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
 
             # Only accumulate h_stack if requested (skip during generation to save memory)
             if return_h_stack:
                 h_stack += [h.clone()]
             h = layer(h, start_pos, freqs_cis, mask)
 
-        log(f"[GPU {local_rank}] Step 3: All {len(self.layers)} layers completed. Applying final norm...")
+        _log(f"[GPU {local_rank}] Step 3: All {len(self.layers)} layers completed. Applying final norm...")
         h = self.norm(h)
 
         if return_h_stack:
             h_stack += [h.clone()]
-            log(f"[GPU {local_rank}] Step 3.5: Stacking and moving h_stack to CPU...")
+            _log(f"[GPU {local_rank}] Step 3.5: Stacking and moving h_stack to CPU...")
             h_stack = torch.stack(h_stack).cpu()
-            log(f"[GPU {local_rank}] h_stack moved to CPU: shape={h_stack.shape}")
+            _log(f"[GPU {local_rank}] h_stack moved to CPU: shape={h_stack.shape}")
         else:
             h_stack = torch.tensor([])
-            log(f"[GPU {local_rank}] h_stack accumulation skipped (generation mode)")
+            _log(f"[GPU {local_rank}] h_stack accumulation skipped (generation mode)")
 
-        log(f"[GPU {local_rank}] Step 4: Computing output logits (CRITICAL - ColumnParallelLinear)...")
-        log(f"[GPU {local_rank}] Input to output layer: h.shape={h.shape}")
+        _log(f"[GPU {local_rank}] Step 4: Computing output logits (CRITICAL - ColumnParallelLinear)...")
+        _log(f"[GPU {local_rank}] Input to output layer: h.shape={h.shape}")
 
         # CRITICAL SYNC POINT: Each GPU computes vocab_size/8 logits
         output = self.output(h).float()
 
-        log(f"[GPU {local_rank}] Output computed: output.shape={output.shape}, dtype={output.dtype}")
-        log(f"[GPU {local_rank}] Note: Each GPU has partial logits (vocab_size/{world_size})")
+        _log(f"[GPU {local_rank}] Output computed: output.shape={output.shape}, dtype={output.dtype}")
+        _log(f"[GPU {local_rank}] Note: Each GPU has partial logits (vocab_size/{world_size})")
         elapsed = time.time() - start_time
-        log(f"[GPU {local_rank}] ========== FORWARD PASS END (took {elapsed:.2f}s) ==========\n")
+        _log(f"[GPU {local_rank}] ========== FORWARD PASS END (took {elapsed:.2f}s) ==========\n")
 
         return output, h_stack, h
 

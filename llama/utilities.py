@@ -607,68 +607,30 @@ def episode(generator, dialogs, temperature=0.0, top_p=0.9, inference_mode=None,
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
 
-    if local_rank == 0:
-        print(f"\n[EPISODE GPU {local_rank}/{world_size}] ========== EPISODE LOOP START ==========")
-        print(f"[EPISODE GPU {local_rank}] bsz={bsz}, min_prompt_len={min_prompt_len}, total_len={total_len}")
-        print(f"[EPISODE GPU {local_rank}] max_decoding_length={max_decoding_length}")
-        print(f"[EPISODE GPU {local_rank}] Will generate {total_len - min_prompt_len} tokens")
-        print(f"[EPISODE GPU {local_rank}] temperature={temperature}, top_p={top_p}")
-        print(f"[EPISODE GPU {local_rank}] curr_pt={curr_pt}, curr_x={curr_x}, curr_y={curr_y}")
+    # All detailed logs now go to gpu_{rank}_debug.log files
 
     for cur_pos in range(min_prompt_len, total_len):
-        iter_start = time.time()
-
-        if local_rank == 0:
-            print(f"\n[EPISODE GPU {local_rank}] --- Token {curr_token + 1} (cur_pos={cur_pos}) ---")
-            print(f"[EPISODE GPU {local_rank}] Step 1: Calling inference_mode (model.forward) with tokens[:, {prev_pos}:{cur_pos}]...")
-
         # CRITICAL: This calls model.forward() which triggers GPU synchronization
         logits, h_stack, h = inference_mode(tokens[:, prev_pos:cur_pos], prev_pos, curr_token=curr_token, curr_pt=curr_pt, curr_x=curr_x, curr_y=curr_y, verbose=verbose)
 
-        if local_rank == 0:
-            print(f"[EPISODE GPU {local_rank}] Step 1 DONE: logits.shape={logits.shape}, h.shape={h.shape}")
-
-        # Shape of logits are (batch_size, total_input_sequence_length, num_possible_tokens)
         h_stacks += [h_stack]
-
-        if local_rank == 0:
-            print(f"[EPISODE GPU {local_rank}] Step 2: Computing probs and storing logits...")
 
         # probs are intentionally being calculated here, so that it contains an extra token (the stop token), to help with loss calculation
         probs = torch.softmax(logits[:, -1,:] / 1, dim=-1)
         list_of_probs  += [probs]
         list_of_logits += [logits[:,-1,:]]
 
-        if local_rank == 0:
-            print(f"[EPISODE GPU {local_rank}] Step 2 DONE: probs.shape={probs.shape}")
-            print(f"[EPISODE GPU {local_rank}] Step 3: Computing next token...")
-
         new_logits = logits
         if temperature > 0:
-            if local_rank == 0:
-                print(f"[EPISODE GPU {local_rank}]   - Using temperature sampling (temp={temperature}, top_p={top_p})")
             probs = torch.softmax(new_logits[:, -1] / temperature, dim=-1)
-            #print(logits, logits.shape)
             next_token = sample_top_p(probs, top_p)
-            if local_rank == 0:
-                print(f"[EPISODE GPU {local_rank}]   - sample_top_p done")
         else:
-            if local_rank == 0:
-                print(f"[EPISODE GPU {local_rank}]   - Using greedy decoding (argmax)")
             next_token = torch.argmax(new_logits[:, -1], dim=-1)
-            if local_rank == 0:
-                print(f"[EPISODE GPU {local_rank}]   - argmax done")
 
         if curr_token > max_decoding_length:
-            if local_rank == 0:
-                print(f"[EPISODE GPU {local_rank}]   - WARNING: Exceeded max_decoding_length ({max_decoding_length}), forcing stop token")
             next_token = stop_tokens[0]
 
         next_token = next_token.reshape(-1)
-
-        if local_rank == 0:
-            print(f"[EPISODE GPU {local_rank}] Step 3 DONE: next_token={next_token.tolist()}")
-            print(f"[EPISODE GPU {local_rank}] Step 4: Updating tokens tensor...")
 
         # only replace token if prompt has already been generated
         next_token = torch.where(
@@ -676,40 +638,20 @@ def episode(generator, dialogs, temperature=0.0, top_p=0.9, inference_mode=None,
         )
         tokens[:, cur_pos] = next_token
 
-        if local_rank == 0:
-            print(f"[EPISODE GPU {local_rank}] Step 4 DONE: Token written to position {cur_pos}")
-            print(f"[EPISODE GPU {local_rank}] Step 5: Checking for EOS...")
-
         eos_reached |= (~input_text_mask[:, cur_pos]) & (
             torch.isin(next_token, stop_tokens)
         )
 
-        if local_rank == 0:
-            print(f"[EPISODE GPU {local_rank}] Step 5 DONE: eos_reached={eos_reached.tolist()}")
-
         prev_pos = cur_pos
-
-        if local_rank == 0:
-            iter_elapsed = time.time() - iter_start
-            print(f"[EPISODE GPU {local_rank}] Token iteration took {iter_elapsed:.2f}s")
 
         # Ensure all GPUs are synchronized before next iteration
         if torch.distributed.is_initialized():
-            if local_rank == 0:
-                print(f"[EPISODE GPU {local_rank}] Synchronizing all GPUs before next iteration...")
             torch.distributed.barrier()
-            if local_rank == 0:
-                print(f"[EPISODE GPU {local_rank}] All GPUs synchronized ✓")
 
         if all(eos_reached):
-            if local_rank == 0:
-                print(f"[EPISODE GPU {local_rank}] All sequences reached EOS, breaking episode loop")
             break
 
         curr_token += 1
-
-    if local_rank == 0:
-        print(f"[EPISODE GPU {local_rank}] ========== EPISODE LOOP END ==========\n")
         
     # Each item in list_of_logits and list_of_probs is of shape (batch_size, num_possible_tokens), and is of length number_of_outputted_tokens
     list_of_probs = torch.stack(list_of_probs)
@@ -816,35 +758,23 @@ def generate_and_save_data(generator, SE, save_dir, rounds, mode, save_frequency
     world_size = int(os.environ.get("WORLD_SIZE", 1))
 
     if local_rank == 0:
-        print(f"\n[DATA_GEN GPU {local_rank}/{world_size}] ========== DATA GENERATION START ==========")
-        print(f"[DATA_GEN GPU {local_rank}] Mode: {mode}")
-        print(f"[DATA_GEN GPU {local_rank}] Total rounds: {rounds}")
-        print(f"[DATA_GEN GPU {local_rank}] Save frequency: {save_frequency}")
-        print(f"[DATA_GEN GPU {local_rank}] Complexity: {complexity}, n_samples: {n_samples}")
-        print(f"[DATA_GEN GPU {local_rank}] Problem types: {problem_type}")
-        print(f"[DATA_GEN GPU {local_rank}] Use existing questions: {use_existing_questions}")
-        print(f"[DATA_GEN GPU {local_rank}] Save directory: {save_dir}")
+        print(f"\n{'='*80}")
+        print(f"  DATA GENERATION: {mode.upper()} | Total: {rounds} rounds | Save every: {save_frequency}")
+        print(f"{'='*80}")
 
     for r in range(rounds+1):
         round_start_time = time.time()
 
-        if local_rank == 0:
-            print(f"\n[DATA_GEN GPU {local_rank}] ===== Round {r}/{rounds} =====")
+        # === CRITICAL FIX: Synchronize random seeds across ALL ranks BEFORE any data generation ===
+        import random
+        import numpy as np
+        deterministic_seed = hash((r, mode)) % (2**32)
+        random.seed(deterministic_seed)
+        np.random.seed(deterministic_seed)
 
         # Save data per round to avoid keeping it in memory
         if not r % save_frequency and r:
-            if verbose:
-                print("On Round Number:", r)
-
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] *** SAVING DATA AT ROUND {r} ***")
-                print(f"[DATA_GEN GPU {local_rank}] Stacking {len(numbers)} number tensors...")
-
             numbers_stacked = torch.stack(numbers)
-
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] Stacking {len(h_stacks)} h_stack tensors...")
-
             max_tok_length = max([h.shape[1] for h in h_stacks])
             if tokens_to_keep == "all":
                 h_stacked = torch.stack([F.pad(h, (0, 0, 0, 0, max_tok_length - h.shape[1], 0, 0, 0))[0,:,:,:,] if max_tok_length != h.shape[1]
@@ -853,24 +783,15 @@ def generate_and_save_data(generator, SE, save_dir, rounds, mode, save_frequency
                 h_stacked = torch.stack(h_stacks)
                 h_stacked = h_stacked.view(-1, tokens_to_keep, generator.model.params.dim, generator.model.params.n_layers+1)
 
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] h_stacked.shape: {h_stacked.shape}")
-                print(f"[DATA_GEN GPU {local_rank}] numbers_stacked.shape: {numbers_stacked.shape}")
-                print(f"[DATA_GEN GPU {local_rank}] Saving to disk...")
-
-            # When saved, the shape of h_stacked is (batch, num_tokens, hidden_dim, n_layers)
             torch.save(h_stacked, os.path.join(save_dir, f"{h_path}{r}.pt"))
             torch.save(numbers_stacked, os.path.join(save_dir, f"{sp_path}{r}.pt"))
 
             if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] Saved successfully to {save_dir}")
-                print(f"[DATA_GEN GPU {local_rank}] Clearing h_stacks and numbers lists...")
+                print(f"  ✓ Round {r}/{rounds} | Saved {len(numbers)} samples to {save_dir}")
 
             h_stacks = []
             numbers  = []
             if r == rounds:
-                if local_rank == 0:
-                    print(f"[DATA_GEN GPU {local_rank}] Reached final round, breaking...")
                 break
 
         if use_existing_questions:
@@ -899,53 +820,11 @@ def generate_and_save_data(generator, SE, save_dir, rounds, mode, save_frequency
                            np.array([d[2][0] for d in dialog_data]),
                            problem_type.values]
 
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] Using existing questions from dataframe")
-                print(f"[DATA_GEN GPU {local_rank}] Generating VSAs for x={dialog_data[1]}, y={dialog_data[2]}, pt={dialog_data[3]}")
-
             correct_vsas = SE.generate_VSA(torch.tensor(dialog_data[1]), torch.tensor(dialog_data[2]), dialog_data[3]).type(torch.bfloat16)
-
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] Calling gather_h_stacks (produce_correct_VSA=False)...")
-
             h_stack, _ = gather_h_stacks(generator, SE, dialog_data, produce_correct_VSA=False)
-
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] gather_h_stacks returned, h_stack.shape: {h_stack.shape}")
         else:
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] Generating new dialog data...")
-
-            # === CRITICAL FIX: Synchronize random seeds across all ranks ===
-            # All 8 processes must generate the SAME random numbers to avoid deadlock
-            # in model parallel all_reduce operations
-            import random
-            import numpy as np
-
-            # Create deterministic seed based on round number and mode
-            deterministic_seed = hash((r, mode)) % (2**32)
-            random.seed(deterministic_seed)
-            np.random.seed(deterministic_seed)
-
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] Set deterministic seed={deterministic_seed} for round {r}")
-
-            # Generate dialog data and gather 'h_stack' and 'correct_sps'
             dialog_data = generate_dialog(complexity=complexity, samples=n_samples, problem_type=problem_type)
-
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] Dialog generated for problem_type={problem_type}")
-                print(f"[DATA_GEN GPU {local_rank}] Calling gather_h_stacks (produce_correct_VSA=True)...")
-
             h_stack, correct_vsas = gather_h_stacks(generator, SE, dialog_data, produce_correct_VSA=True)
-
-            if local_rank == 0:
-                print(f"[DATA_GEN GPU {local_rank}] gather_h_stacks returned, h_stack.shape: {h_stack.shape}")
-
-        # shape of h_stack is n_layers, batch, num_tokens, hiddem_dim.
-
-        if local_rank == 0:
-            print(f"[DATA_GEN GPU {local_rank}] Processing h_stack with tokens_to_keep={tokens_to_keep}...")
 
         if tokens_to_keep == "all":
             # Dialog_data[0] is the dialogs
@@ -958,16 +837,17 @@ def generate_and_save_data(generator, SE, save_dir, rounds, mode, save_frequency
                              for b in range(h_stack.shape[1])]
         else:
             h_stacks += [h_stack[:,:,-tokens_to_keep:,:,].permute((1, 2, 3, 0))]
-        # shape of h_stacks[-1] is batch, num_tokens, hiddem_dim, n_layers. len of it is number of runs
         numbers += correct_vsas
 
-        if local_rank == 0:
+        # Progress indicator every 100 rounds (not save points)
+        if local_rank == 0 and r % 100 == 0 and r > 0 and r % save_frequency != 0:
             round_elapsed = time.time() - round_start_time
-            print(f"[DATA_GEN GPU {local_rank}] Round {r} completed in {round_elapsed:.2f}s")
-            print(f"[DATA_GEN GPU {local_rank}] Current h_stacks length: {len(h_stacks)}, numbers length: {len(numbers)}")
+            print(f"  → Round {r}/{rounds} ({round_elapsed:.2f}s)")
 
     if local_rank == 0:
-        print(f"[DATA_GEN GPU {local_rank}] ========== DATA GENERATION COMPLETE ==========\n")
+        print(f"{'='*80}")
+        print(f"  DATA GENERATION COMPLETE: {mode.upper()}")
+        print(f"{'='*80}\n")
 
 
 def generate_data_loaders(mode, save_dir, data_rounds, save_frequency, layer_numbers, n_samples=1, df_subset=None,
