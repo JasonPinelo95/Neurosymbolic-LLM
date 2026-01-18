@@ -214,11 +214,12 @@ def generate_dialog(
     limit_solution_digits: bool = True,
     modify_question_format: bool = False,
 ):
-    rng = np.random.default_rng()
+    # Use legacy numpy random functions that respect np.random.seed()
+    # (np.random.default_rng() does NOT respect global seed)
 
     # ── sample operands ───────────────────────────
-    x = rng.integers(1, 10 ** (complexity + 1), size=samples)
-    y = rng.integers(1, 10 ** (complexity + 1), size=samples)
+    x = np.random.randint(1, 10 ** (complexity + 1), size=samples)
+    y = np.random.randint(1, 10 ** (complexity + 1), size=samples)
 
     # ensure x ≥ y for a nicer canonical ordering
     for i in range(samples):
@@ -231,7 +232,7 @@ def generate_dialog(
         x, y, x_words, y_words = x_words, y_words, x, y  # stash ints
 
     # example pairs for few-shot prefix (unchanged logic)
-    ex1, ex2 = rng.integers(1, 10 ** (complexity + 1), size=(2, 2))
+    ex1, ex2 = np.random.randint(1, 10 ** (complexity + 1), size=(2, 2))
     ex1 = tuple(sorted(ex1, reverse=True))
     ex2 = tuple(sorted(ex2, reverse=True))
     if string_nums:
