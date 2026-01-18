@@ -906,6 +906,20 @@ def generate_and_save_data(generator, SE, save_dir, rounds, mode, save_frequency
             if local_rank == 0:
                 print(f"[DATA_GEN GPU {local_rank}] Generating new dialog data...")
 
+            # === CRITICAL FIX: Synchronize random seeds across all ranks ===
+            # All 8 processes must generate the SAME random numbers to avoid deadlock
+            # in model parallel all_reduce operations
+            import random
+            import numpy as np
+
+            # Create deterministic seed based on round number and mode
+            deterministic_seed = hash((r, mode)) % (2**32)
+            random.seed(deterministic_seed)
+            np.random.seed(deterministic_seed)
+
+            if local_rank == 0:
+                print(f"[DATA_GEN GPU {local_rank}] Set deterministic seed={deterministic_seed} for round {r}")
+
             # Generate dialog data and gather 'h_stack' and 'correct_sps'
             dialog_data = generate_dialog(complexity=complexity, samples=n_samples, problem_type=problem_type)
 
