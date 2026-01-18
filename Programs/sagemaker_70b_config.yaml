@@ -26,7 +26,9 @@ max_gen_len: null
 max_digits: 3  # Paper uses 3-digit integers (0-999), not 5
 VSA_dim: 2048  # Fixed at 2048 in paper
 possible_problems:
+  - addition
   - multiplication
+  - division
   - modulo
   - gcd
   - lcm
@@ -34,8 +36,9 @@ possible_problems:
   - bitwise_and
   - bitwise_xor
   - bitwise_or
-  # Note: addition and division are EXCLUDED from training
+  # Note: addition and division are EXCLUDED from training (problem_type below)
   # They are only used in test set for out-of-distribution evaluation
+  # BUT they MUST be in possible_problems so SymbolicEngine can create VSA vectors for them
 
 # === Data Generation (Section 5.1) ===
 # Paper uses: 20,000 training, 200 validation, 2,000 test
@@ -54,7 +57,7 @@ layer_numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
                 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
                 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
                 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80]
-complexity: 2  # Complexity = digits + 1 (for 3-digit numbers, complexity = 4, but paper uses 2)
+complexity: 2  # Formula: complexity = max_digits - 1 (for 3-digit numbers: 3-1=2, generates 0-999)
 n_samples: 1  # Reduced for 70B (paper uses 2 for 8B)
 
 # Problem types for training (Section 4.1 - excludes addition and division)
