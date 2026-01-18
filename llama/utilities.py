@@ -783,7 +783,9 @@ def generate_and_save_data(generator, SE, save_dir, rounds, mode, save_frequency
         # === CRITICAL FIX: Synchronize random seeds across ALL ranks BEFORE any data generation ===
         import random
         import numpy as np
-        deterministic_seed = hash((r, mode)) % (2**32)
+        # CRITICAL: Use deterministic seed computation (hash() is NOT deterministic across processes!)
+        mode_int = sum(ord(c) for c in mode)  # Convert mode string to int
+        deterministic_seed = (r * 999983 + mode_int * 104729) % (2**32)  # Large primes for good mixing
 
         # Synchronize ALL random number generators
         random.seed(deterministic_seed)
