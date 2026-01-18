@@ -42,9 +42,10 @@ possible_problems:
 
 # === Data Generation (Section 5.1) ===
 # Paper uses: 20,000 training, 200 validation, 2,000 test
-train_data_rounds: 20000
-val_data_rounds: 200
-test_data_rounds: 2000
+# Scaled to: 100,000 training, 1,000 validation, 10,000 test (5x larger)
+train_data_rounds: 100000
+val_data_rounds: 1000
+test_data_rounds: 10000
 restrict_train_dataset: 0  # 0 = use all data
 restrict_val_dataset: 0
 restrict_test_dataset: 0
