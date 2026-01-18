@@ -398,89 +398,75 @@ class Transformer(nn.Module):
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         world_size = int(os.environ.get("WORLD_SIZE", 1))
 
-        # === FILE LOGGING FOR ALL GPUs ===
-        log_file = f"/tmp/gpu_{local_rank}_debug.log"
-        with open(log_file, "a") as f:
-            f.write(f"\n[GPU {local_rank}] ========== FORWARD PASS ==========\n")
-            f.write(f"[GPU {local_rank}] tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}\n")
-            f.write(f"[GPU {local_rank}] Time: {time.time()}\n")
-            f.flush()
+        # === FILE LOGGING SETUP - All logs to repository root ===
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        log_file = os.path.join(repo_root, f"gpu_{local_rank}_debug.log")
 
-        # === CRITICAL TEST: Verify ALL GPUs can log ===
-        print(f"[CRITICAL TEST GPU {local_rank}] Entered forward(), tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}, LOG: {log_file}")
+        def log(msg):
+            """Write log message to file for this GPU"""
+            with open(log_file, "a") as f:
+                f.write(f"{msg}\n")
+                f.flush()
 
-        if local_rank == 0:
-            start_time = time.time()
-            print(f"\n[GPU {local_rank}/{world_size}] ========== FORWARD PASS START ==========")
-            print(f"[GPU {local_rank}] tokens.shape: {tokens.shape}, start_pos: {start_pos}")
-            if not return_h_stack:
-                print(f"[GPU {local_rank}] h_stack accumulation DISABLED (generation mode)")
+        start_time = time.time()
+        log(f"\n[GPU {local_rank}] ========== FORWARD PASS START ==========")
+        log(f"[GPU {local_rank}] tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}")
+        log(f"[GPU {local_rank}] return_h_stack={return_h_stack}")
+        log(f"[GPU {local_rank}] Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         _bsz, seqlen = tokens.shape
 
-        if local_rank == 0:
-            print(f"[GPU {local_rank}] Step 1: Computing embeddings...")
+        log(f"[GPU {local_rank}] Step 1: Computing embeddings...")
         h = self.tok_embeddings(tokens)
-
-        if local_rank == 0:
-            print(f"[GPU {local_rank}] After embeddings: h.shape={h.shape}, dtype={h.dtype}, device={h.device}")
+        log(f"[GPU {local_rank}] After embeddings: h.shape={h.shape}, dtype={h.dtype}, device={h.device}")
 
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
         mask = None
         if seqlen > 1:
+            log(f"[GPU {local_rank}] Creating attention mask for seqlen={seqlen}")
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
             mask = torch.triu(mask.float(), diagonal=1).type_as(h)
             mask = torch.hstack(
                 [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
             ).type_as(h)
-            if local_rank == 0:
-                print(f"[GPU {local_rank}] Mask created: shape={mask.shape}")
+            log(f"[GPU {local_rank}] Mask created: shape={mask.shape}")
 
         h_stack = []
-        if local_rank == 0:
-            print(f"[GPU {local_rank}] Step 2: Processing {len(self.layers)} transformer layers...")
+        log(f"[GPU {local_rank}] Step 2: Processing {len(self.layers)} transformer layers...")
 
         for n, layer in enumerate(self.layers):
-            if local_rank == 0 and n % 5 == 0:  # Log every 5 layers for better diagnostics
-                print(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
+            if n % 10 == 0:  # Log every 10 layers
+                log(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
 
             # Only accumulate h_stack if requested (skip during generation to save memory)
             if return_h_stack:
                 h_stack += [h.clone()]
             h = layer(h, start_pos, freqs_cis, mask)
 
-        if local_rank == 0:
-            print(f"[GPU {local_rank}] Step 3: All layers completed. Applying final norm...")
+        log(f"[GPU {local_rank}] Step 3: All {len(self.layers)} layers completed. Applying final norm...")
         h = self.norm(h)
 
         if return_h_stack:
             h_stack += [h.clone()]
-            # Move entire h_stack to CPU in one operation to avoid GPU sync issues
-            if local_rank == 0:
-                print(f"[GPU {local_rank}] Step 3.5: Stacking and moving h_stack to CPU...")
+            log(f"[GPU {local_rank}] Step 3.5: Stacking and moving h_stack to CPU...")
             h_stack = torch.stack(h_stack).cpu()
-            if local_rank == 0:
-                print(f"[GPU {local_rank}] h_stack moved to CPU: shape={h_stack.shape}")
+            log(f"[GPU {local_rank}] h_stack moved to CPU: shape={h_stack.shape}")
         else:
-            # Return empty tensor when h_stack not needed
             h_stack = torch.tensor([])
-            if local_rank == 0:
-                print(f"[GPU {local_rank}] h_stack accumulation skipped (generation mode)")
+            log(f"[GPU {local_rank}] h_stack accumulation skipped (generation mode)")
 
-        if local_rank == 0:
-            print(f"[GPU {local_rank}] Step 4: Computing output logits (CRITICAL - ColumnParallelLinear)...")
-            print(f"[GPU {local_rank}] Input to output layer: h.shape={h.shape}")
+        log(f"[GPU {local_rank}] Step 4: Computing output logits (CRITICAL - ColumnParallelLinear)...")
+        log(f"[GPU {local_rank}] Input to output layer: h.shape={h.shape}")
 
         # CRITICAL SYNC POINT: Each GPU computes vocab_size/8 logits
         output = self.output(h).float()
 
-        if local_rank == 0:
-            print(f"[GPU {local_rank}] Output computed: output.shape={output.shape}, dtype={output.dtype}")
-            print(f"[GPU {local_rank}] Note: Each GPU has partial logits (vocab_size/{world_size})")
-            elapsed = time.time() - start_time
-            print(f"[GPU {local_rank}] ========== FORWARD PASS END (took {elapsed:.2f}s) ==========\n")
+        log(f"[GPU {local_rank}] Output computed: output.shape={output.shape}, dtype={output.dtype}")
+        log(f"[GPU {local_rank}] Note: Each GPU has partial logits (vocab_size/{world_size})")
+        elapsed = time.time() - start_time
+        log(f"[GPU {local_rank}] ========== FORWARD PASS END (took {elapsed:.2f}s) ==========\n")
 
         return output, h_stack, h
 
