@@ -3,7 +3,7 @@ curr_dir: "~/Neurosymbolic-LLM/Programs"
 git_dir: "~/Neurosymbolic-LLM"
 ckpt_dir: "~/.llama/checkpoints/Llama3.1-8B-Instruct"
 tokenizer_path: "~/.llama/checkpoints/Llama3.1-8B-Instruct/tokenizer.model"
-generate_data: 1
+generate_data: 0
 log_wandb: 1
 gpu_seed: 0
 
