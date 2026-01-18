@@ -431,23 +431,21 @@ class Transformer(nn.Module):
             if local_rank == 0 and n % 20 == 0:  # Log every 20 layers
                 print(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
 
-            # CRITICAL FIX: Synchronize all GPUs before clone().cpu()
-            # This ensures all GPUs have completed their embedding/previous layer computations
-            if torch.distributed.is_initialized():
-                if local_rank == 0 and n == 0:
-                    print(f"[GPU {local_rank}] Synchronizing GPUs before h_stack clone for layer {n}...")
-                torch.distributed.barrier()
-                if local_rank == 0 and n == 0:
-                    print(f"[GPU {local_rank}] Synchronization complete")
-
-            h_stack += [h.clone().cpu()]
+            # Keep tensor on GPU during forward pass to avoid async .cpu() issues
+            h_stack += [h.clone()]
             h = layer(h, start_pos, freqs_cis, mask)
 
         if local_rank == 0:
             print(f"[GPU {local_rank}] Step 3: All layers completed. Applying final norm...")
         h = self.norm(h)
-        h_stack += [h.clone().cpu()]
-        h_stack = torch.stack(h_stack)
+        h_stack += [h.clone()]
+
+        # Move entire h_stack to CPU in one operation to avoid GPU sync issues
+        if local_rank == 0:
+            print(f"[GPU {local_rank}] Step 3.5: Stacking and moving h_stack to CPU...")
+        h_stack = torch.stack(h_stack).cpu()
+        if local_rank == 0:
+            print(f"[GPU {local_rank}] h_stack moved to CPU: shape={h_stack.shape}")
 
         if local_rank == 0:
             print(f"[GPU {local_rank}] Step 4: Computing output logits (CRITICAL - ColumnParallelLinear)...")
@@ -459,16 +457,6 @@ class Transformer(nn.Module):
         if local_rank == 0:
             print(f"[GPU {local_rank}] Output computed: output.shape={output.shape}, dtype={output.dtype}")
             print(f"[GPU {local_rank}] Note: Each GPU has partial logits (vocab_size/{world_size})")
-
-        # Ensure all GPUs are synchronized
-        if torch.distributed.is_initialized():
-            if local_rank == 0:
-                print(f"[GPU {local_rank}] Synchronizing all GPUs...")
-            torch.distributed.barrier()
-            if local_rank == 0:
-                print(f"[GPU {local_rank}] All GPUs synchronized ✓")
-
-        if local_rank == 0:
             elapsed = time.time() - start_time
             print(f"[GPU {local_rank}] ========== FORWARD PASS END (took {elapsed:.2f}s) ==========\n")
 
