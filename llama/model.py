@@ -398,8 +398,16 @@ class Transformer(nn.Module):
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         world_size = int(os.environ.get("WORLD_SIZE", 1))
 
+        # === FILE LOGGING FOR ALL GPUs ===
+        log_file = f"/tmp/gpu_{local_rank}_debug.log"
+        with open(log_file, "a") as f:
+            f.write(f"\n[GPU {local_rank}] ========== FORWARD PASS ==========\n")
+            f.write(f"[GPU {local_rank}] tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}\n")
+            f.write(f"[GPU {local_rank}] Time: {time.time()}\n")
+            f.flush()
+
         # === CRITICAL TEST: Verify ALL GPUs can log ===
-        print(f"[CRITICAL TEST GPU {local_rank}] Entered forward(), tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}")
+        print(f"[CRITICAL TEST GPU {local_rank}] Entered forward(), tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}, LOG: {log_file}")
 
         if local_rank == 0:
             start_time = time.time()
