@@ -158,13 +158,13 @@ class Attention(nn.Module):
         # === DEBUG LOGGING ===
         import os
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        debug = (local_rank == 0) and (start_pos > 0)  # Only log when using cache
+        debug = start_pos > 0  # Log for ALL GPUs when using cache
 
         bsz, seqlen, _ = x.shape
 
         if debug:
             print(f"  [ATTENTION GPU {local_rank}] Input: bsz={bsz}, seqlen={seqlen}, start_pos={start_pos}")
-            print(f"  [ATTENTION GPU {local_rank}] Step 1: Computing Q, K, V projections...")
+            print(f"  [ATTENTION GPU {local_rank}] Step 1: Computing Q, K, V projections (ColumnParallel - all-gather)...")
 
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
@@ -256,6 +256,7 @@ class Attention(nn.Module):
 
         if debug:
             print(f"  [ATTENTION GPU {local_rank}] Step 12 DONE: result.shape={result.shape}")
+            print(f"  [ATTENTION GPU {local_rank}] === Attention sublayer complete ===")
 
         return result
 
@@ -289,11 +290,11 @@ class FeedForward(nn.Module):
         # === DEBUG LOGGING ===
         import os
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        debug = (local_rank == 0) and (x.shape[1] == 1)  # Only log for single token (cache mode)
+        debug = (x.shape[1] == 1)  # Log for ALL GPUs in single token (cache mode)
 
         if debug:
             print(f"  [FEEDFORWARD GPU {local_rank}] Input: x.shape={x.shape}")
-            print(f"  [FEEDFORWARD GPU {local_rank}] Computing w1(x) and w3(x)...")
+            print(f"  [FEEDFORWARD GPU {local_rank}] Computing w1(x) and w3(x) (ColumnParallel - all-gather)...")
 
         w1_out = self.w1(x)
         w3_out = self.w3(x)
@@ -310,6 +311,7 @@ class FeedForward(nn.Module):
 
         if debug:
             print(f"  [FEEDFORWARD GPU {local_rank}] w2 done, result.shape={result.shape}")
+            print(f"  [FEEDFORWARD GPU {local_rank}] === FeedForward sublayer complete ===")
 
         return result
 
@@ -341,7 +343,7 @@ class TransformerBlock(nn.Module):
         # === DEBUG LOGGING ===
         import os
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        debug = (local_rank == 0) and (start_pos > 0)  # Only log when using cache
+        debug = start_pos > 0  # Log for ALL GPUs when using cache
 
         if debug:
             print(f"[LAYER {self.layer_id} GPU {local_rank}] Starting layer forward pass")
