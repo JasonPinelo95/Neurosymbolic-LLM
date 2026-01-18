@@ -398,6 +398,9 @@ class Transformer(nn.Module):
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         world_size = int(os.environ.get("WORLD_SIZE", 1))
 
+        # === CRITICAL TEST: Verify ALL GPUs can log ===
+        print(f"[CRITICAL TEST GPU {local_rank}] Entered forward(), tokens.shape={tokens.shape}, start_pos={start_pos}, curr_token={curr_token}")
+
         if local_rank == 0:
             start_time = time.time()
             print(f"\n[GPU {local_rank}/{world_size}] ========== FORWARD PASS START ==========")
