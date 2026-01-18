@@ -430,6 +430,16 @@ class Transformer(nn.Module):
         for n, layer in enumerate(self.layers):
             if local_rank == 0 and n % 20 == 0:  # Log every 20 layers
                 print(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
+
+            # CRITICAL FIX: Synchronize all GPUs before clone().cpu()
+            # This ensures all GPUs have completed their embedding/previous layer computations
+            if torch.distributed.is_initialized():
+                if local_rank == 0 and n == 0:
+                    print(f"[GPU {local_rank}] Synchronizing GPUs before h_stack clone for layer {n}...")
+                torch.distributed.barrier()
+                if local_rank == 0 and n == 0:
+                    print(f"[GPU {local_rank}] Synchronization complete")
+
             h_stack += [h.clone().cpu()]
             h = layer(h, start_pos, freqs_cis, mask)
 
