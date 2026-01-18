@@ -203,8 +203,8 @@ class Llama:
                 print(f"\n[GENERATION GPU {local_rank}] --- Token {cur_pos - min_prompt_len + 1}/{total_len - min_prompt_len} (pos={cur_pos}) ---")
                 print(f"[GENERATION GPU {local_rank}] Step 1: Calling model.forward() with tokens[:, {prev_pos}:{cur_pos}]...")
 
-            # CRITICAL: This calls the forward pass which does GPU synchronization
-            logits, _, h = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
+            # CRITICAL: This calls the forward pass - disable h_stack to save memory
+            logits, _, h = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos, return_h_stack=False)
 
             if local_rank == 0:
                 print(f"[GENERATION GPU {local_rank}] Step 1 DONE: logits.shape={logits.shape}, h.shape={h.shape}")

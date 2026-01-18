@@ -390,7 +390,7 @@ class Transformer(nn.Module):
 
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: int, curr_token=0, curr_pt="addition", curr_x=0, curr_y=0, verbose=False):
+    def forward(self, tokens: torch.Tensor, start_pos: int, curr_token=0, curr_pt="addition", curr_x=0, curr_y=0, verbose=False, return_h_stack=True):
         import os
         import time
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
@@ -400,6 +400,8 @@ class Transformer(nn.Module):
             start_time = time.time()
             print(f"\n[GPU {local_rank}/{world_size}] ========== FORWARD PASS START ==========")
             print(f"[GPU {local_rank}] tokens.shape: {tokens.shape}, start_pos: {start_pos}")
+            if not return_h_stack:
+                print(f"[GPU {local_rank}] h_stack accumulation DISABLED (generation mode)")
 
         _bsz, seqlen = tokens.shape
 
@@ -431,21 +433,28 @@ class Transformer(nn.Module):
             if local_rank == 0 and n % 20 == 0:  # Log every 20 layers
                 print(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
 
-            # Keep tensor on GPU during forward pass to avoid async .cpu() issues
-            h_stack += [h.clone()]
+            # Only accumulate h_stack if requested (skip during generation to save memory)
+            if return_h_stack:
+                h_stack += [h.clone()]
             h = layer(h, start_pos, freqs_cis, mask)
 
         if local_rank == 0:
             print(f"[GPU {local_rank}] Step 3: All layers completed. Applying final norm...")
         h = self.norm(h)
-        h_stack += [h.clone()]
 
-        # Move entire h_stack to CPU in one operation to avoid GPU sync issues
-        if local_rank == 0:
-            print(f"[GPU {local_rank}] Step 3.5: Stacking and moving h_stack to CPU...")
-        h_stack = torch.stack(h_stack).cpu()
-        if local_rank == 0:
-            print(f"[GPU {local_rank}] h_stack moved to CPU: shape={h_stack.shape}")
+        if return_h_stack:
+            h_stack += [h.clone()]
+            # Move entire h_stack to CPU in one operation to avoid GPU sync issues
+            if local_rank == 0:
+                print(f"[GPU {local_rank}] Step 3.5: Stacking and moving h_stack to CPU...")
+            h_stack = torch.stack(h_stack).cpu()
+            if local_rank == 0:
+                print(f"[GPU {local_rank}] h_stack moved to CPU: shape={h_stack.shape}")
+        else:
+            # Return empty tensor when h_stack not needed
+            h_stack = torch.tensor([])
+            if local_rank == 0:
+                print(f"[GPU {local_rank}] h_stack accumulation skipped (generation mode)")
 
         if local_rank == 0:
             print(f"[GPU {local_rank}] Step 4: Computing output logits (CRITICAL - ColumnParallelLinear)...")
