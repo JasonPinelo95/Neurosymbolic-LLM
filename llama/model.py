@@ -282,33 +282,77 @@ class Transformer(nn.Module):
 
     @torch.inference_mode()
     def forward(self, tokens: torch.Tensor, start_pos: int, curr_token=0, curr_pt="addition", curr_x=0, curr_y=0, verbose=False):
+        import os
+        import time
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        world_size = int(os.environ.get("WORLD_SIZE", 1))
+
+        if local_rank == 0:
+            start_time = time.time()
+            print(f"\n[GPU {local_rank}/{world_size}] ========== FORWARD PASS START ==========")
+            print(f"[GPU {local_rank}] tokens.shape: {tokens.shape}, start_pos: {start_pos}")
+
         _bsz, seqlen = tokens.shape
+
+        if local_rank == 0:
+            print(f"[GPU {local_rank}] Step 1: Computing embeddings...")
         h = self.tok_embeddings(tokens)
+
+        if local_rank == 0:
+            print(f"[GPU {local_rank}] After embeddings: h.shape={h.shape}, dtype={h.dtype}, device={h.device}")
+
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
         mask = None
         if seqlen > 1:
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
-
             mask = torch.triu(mask.float(), diagonal=1).type_as(h)
-
-            # When performing key-value caching, we compute the attention scores
-            # only for the new sequence. Thus, the matrix of scores is of size
-            # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
-            # j > cache_len + i, since row i corresponds to token cache_len + i.
             mask = torch.hstack(
                 [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
             ).type_as(h)
+            if local_rank == 0:
+                print(f"[GPU {local_rank}] Mask created: shape={mask.shape}")
+
         h_stack = []
+        if local_rank == 0:
+            print(f"[GPU {local_rank}] Step 2: Processing {len(self.layers)} transformer layers...")
+
         for n, layer in enumerate(self.layers):
+            if local_rank == 0 and n % 20 == 0:  # Log every 20 layers
+                print(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
             h_stack += [h.clone().cpu()]
             h = layer(h, start_pos, freqs_cis, mask)
+
+        if local_rank == 0:
+            print(f"[GPU {local_rank}] Step 3: All layers completed. Applying final norm...")
         h = self.norm(h)
         h_stack += [h.clone().cpu()]
         h_stack = torch.stack(h_stack)
-        #print(h_stack.shape, h.shape)
+
+        if local_rank == 0:
+            print(f"[GPU {local_rank}] Step 4: Computing output logits (CRITICAL - ColumnParallelLinear)...")
+            print(f"[GPU {local_rank}] Input to output layer: h.shape={h.shape}")
+
+        # CRITICAL SYNC POINT: Each GPU computes vocab_size/8 logits
         output = self.output(h).float()
+
+        if local_rank == 0:
+            print(f"[GPU {local_rank}] Output computed: output.shape={output.shape}, dtype={output.dtype}")
+            print(f"[GPU {local_rank}] Note: Each GPU has partial logits (vocab_size/{world_size})")
+
+        # Ensure all GPUs are synchronized
+        if torch.distributed.is_initialized():
+            if local_rank == 0:
+                print(f"[GPU {local_rank}] Synchronizing all GPUs...")
+            torch.distributed.barrier()
+            if local_rank == 0:
+                print(f"[GPU {local_rank}] All GPUs synchronized ✓")
+
+        if local_rank == 0:
+            elapsed = time.time() - start_time
+            print(f"[GPU {local_rank}] ========== FORWARD PASS END (took {elapsed:.2f}s) ==========\n")
+
         return output, h_stack, h
 
     #@torch.inference_mode()
