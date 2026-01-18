@@ -176,69 +176,66 @@ class Llama:
             )
 
         stop_tokens = torch.tensor(list(self.tokenizer.stop_tokens))
-        print("stop_tokens:", stop_tokens)
-        print("range:", range(min_prompt_len, total_len))
-        print("prev_pos", prev_pos)
-        print("stop_tokens", stop_tokens)
+        # DISABLED: Debug logging - uncomment to enable
+        # print("stop_tokens:", stop_tokens)
+        # print("range:", range(min_prompt_len, total_len))
+        # print("prev_pos", prev_pos)
+        # print("prompt_tokens", prompt_tokens)
 
-        print("prompt_tokens", prompt_tokens)
-
-        # === DEBUG LOGGING SETUP ===
-        import os
-        import time
-        local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        world_size = int(os.environ.get("WORLD_SIZE", 1))
-
-        if local_rank == 0:
-            print(f"\n[GENERATION GPU {local_rank}/{world_size}] ========== GENERATION LOOP START ==========")
-            print(f"[GENERATION GPU {local_rank}] total_len={total_len}, min_prompt_len={min_prompt_len}")
-            print(f"[GENERATION GPU {local_rank}] Will generate {total_len - min_prompt_len} tokens")
-            print(f"[GENERATION GPU {local_rank}] temperature={temperature}, top_p={top_p}")
-            print(f"[GENERATION GPU {local_rank}] logprobs={logprobs}")
+        # === DEBUG LOGGING SETUP - DISABLED ===
+        # import os
+        # import time
+        # local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        # world_size = int(os.environ.get("WORLD_SIZE", 1))
+        # if local_rank == 0:
+        #     print(f"\n[GENERATION GPU {local_rank}/{world_size}] ========== GENERATION LOOP START ==========")
+        #     print(f"[GENERATION GPU {local_rank}] total_len={total_len}, min_prompt_len={min_prompt_len}")
+        #     print(f"[GENERATION GPU {local_rank}] Will generate {total_len - min_prompt_len} tokens")
+        #     print(f"[GENERATION GPU {local_rank}] temperature={temperature}, top_p={top_p}")
+        #     print(f"[GENERATION GPU {local_rank}] logprobs={logprobs}")
 
         for cur_pos in range(min_prompt_len, total_len):
-            iter_start = time.time()
-
-            if local_rank == 0:
-                print(f"\n[GENERATION GPU {local_rank}] --- Token {cur_pos - min_prompt_len + 1}/{total_len - min_prompt_len} (pos={cur_pos}) ---")
-                print(f"[GENERATION GPU {local_rank}] Step 1: Calling model.forward() with tokens[:, {prev_pos}:{cur_pos}]...")
+            # DISABLED: Debug logging
+            # iter_start = time.time()
+            # if local_rank == 0:
+            #     print(f"\n[GENERATION GPU {local_rank}] --- Token {cur_pos - min_prompt_len + 1}/{total_len - min_prompt_len} (pos={cur_pos}) ---")
+            #     print(f"[GENERATION GPU {local_rank}] Step 1: Calling model.forward() with tokens[:, {prev_pos}:{cur_pos}]...")
 
             # CRITICAL: This calls the forward pass - disable h_stack to save memory
             logits, _, h = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos, return_h_stack=False)
 
-            if local_rank == 0:
-                print(f"[GENERATION GPU {local_rank}] Step 1 DONE: logits.shape={logits.shape}, h.shape={h.shape}")
-
-            print(cur_pos, logits.shape)
-
-            if local_rank == 0:
-                print(f"[GENERATION GPU {local_rank}] Step 2: Computing next token...")
+            # DISABLED: Debug logging
+            # if local_rank == 0:
+            #     print(f"[GENERATION GPU {local_rank}] Step 1 DONE: logits.shape={logits.shape}, h.shape={h.shape}")
+            # print(cur_pos, logits.shape)
+            # if local_rank == 0:
+            #     print(f"[GENERATION GPU {local_rank}] Step 2: Computing next token...")
 
             # CRITICAL SYNC POINT: softmax/argmax may trigger all-gather across GPUs
             if temperature > 0:
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}]   - Using temperature sampling (temp={temperature}, top_p={top_p})")
-                    print(f"[GENERATION GPU {local_rank}]   - Computing softmax...")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}]   - Using temperature sampling (temp={temperature}, top_p={top_p})")
+                #     print(f"[GENERATION GPU {local_rank}]   - Computing softmax...")
                 probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}]   - Softmax done: probs.shape={probs.shape}")
-                    print(f"[GENERATION GPU {local_rank}]   - Calling sample_top_p()...")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}]   - Softmax done: probs.shape={probs.shape}")
+                #     print(f"[GENERATION GPU {local_rank}]   - Calling sample_top_p()...")
                 next_token = sample_top_p(probs, top_p)
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}]   - sample_top_p() done")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}]   - sample_top_p() done")
             else:
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}]   - Using greedy decoding (argmax)")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}]   - Using greedy decoding (argmax)")
                 next_token = torch.argmax(logits[:, -1], dim=-1)
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}]   - argmax done")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}]   - argmax done")
 
             next_token = next_token.reshape(-1)
-            print("next_token", next_token)
+            # print("next_token", next_token)
 
-            if local_rank == 0:
-                print(f"[GENERATION GPU {local_rank}] Step 2 DONE: next_token={next_token.tolist()}")
-                print(f"[GENERATION GPU {local_rank}] Step 3: Updating tokens tensor...")
+            # if local_rank == 0:
+            #     print(f"[GENERATION GPU {local_rank}] Step 2 DONE: next_token={next_token.tolist()}")
+            #     print(f"[GENERATION GPU {local_rank}] Step 3: Updating tokens tensor...")
 
             # only replace token if prompt has already been generated
             next_token = torch.where(
@@ -246,53 +243,58 @@ class Llama:
             )
             tokens[:, cur_pos] = next_token
 
-            if local_rank == 0:
-                print(f"[GENERATION GPU {local_rank}] Step 3 DONE: Token written to position {cur_pos}")
+            # DISABLED: Debug logging
+            # if local_rank == 0:
+            #     print(f"[GENERATION GPU {local_rank}] Step 3 DONE: Token written to position {cur_pos}")
 
             if logprobs:
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}] Step 4: Computing logprobs (cross_entropy)...")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}] Step 4: Computing logprobs (cross_entropy)...")
                 token_logprobs[:, prev_pos + 1 : cur_pos + 1] = -F.cross_entropy(
                     input=logits.transpose(1, 2),
                     target=tokens[:, prev_pos + 1 : cur_pos + 1],
                     reduction="none",
                     ignore_index=pad_id,
                 )
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}] Step 4 DONE: logprobs computed")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}] Step 4 DONE: logprobs computed")
 
-            if local_rank == 0:
-                print(f"[GENERATION GPU {local_rank}] Step 5: Checking for EOS tokens...")
+            # DISABLED: Debug logging
+            # if local_rank == 0:
+            #     print(f"[GENERATION GPU {local_rank}] Step 5: Checking for EOS tokens...")
 
             # Check for EOS tokens
             eos_reached |= (~input_text_mask[:, cur_pos]) & (
                 torch.isin(next_token, stop_tokens)
             )
 
-            if local_rank == 0:
-                print(f"[GENERATION GPU {local_rank}] Step 5 DONE: eos_reached={eos_reached.tolist()}")
+            # DISABLED: Debug logging
+            # if local_rank == 0:
+            #     print(f"[GENERATION GPU {local_rank}] Step 5 DONE: eos_reached={eos_reached.tolist()}")
 
             prev_pos = cur_pos
 
-            if local_rank == 0:
-                iter_elapsed = time.time() - iter_start
-                print(f"[GENERATION GPU {local_rank}] Token iteration took {iter_elapsed:.2f}s")
+            # DISABLED: Debug logging
+            # if local_rank == 0:
+            #     iter_elapsed = time.time() - iter_start
+            #     print(f"[GENERATION GPU {local_rank}] Token iteration took {iter_elapsed:.2f}s")
 
             # Ensure all GPUs are synchronized before next iteration
             if torch.distributed.is_initialized():
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}] Synchronizing all GPUs before next iteration...")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}] Synchronizing all GPUs before next iteration...")
                 torch.distributed.barrier()
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}] All GPUs synchronized ✓")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}] All GPUs synchronized ✓")
 
             if all(eos_reached):
-                if local_rank == 0:
-                    print(f"[GENERATION GPU {local_rank}] All sequences reached EOS, breaking generation loop")
+                # if local_rank == 0:
+                #     print(f"[GENERATION GPU {local_rank}] All sequences reached EOS, breaking generation loop")
                 break
 
-        if local_rank == 0:
-            print(f"[GENERATION GPU {local_rank}] ========== GENERATION LOOP END ==========\n")
+        # DISABLED: Debug logging
+        # if local_rank == 0:
+        #     print(f"[GENERATION GPU {local_rank}] ========== GENERATION LOOP END ==========\n")
 
         if logprobs:
             token_logprobs = token_logprobs.tolist()

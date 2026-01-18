@@ -763,19 +763,19 @@ def generate_and_save_data(generator, SE, save_dir, rounds, mode, save_frequency
         print(f"{'='*80}")
 
     # Setup file-based logging for seed verification
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    seed_log_file = os.path.join(repo_root, f"gpu_{local_rank}_seed_debug.log")
-
-    # Clear previous seed logs
-    with open(seed_log_file, "w") as f:
-        f.write(f"=== SEED DEBUG LOG GPU {local_rank} - {mode.upper()} MODE ===\n")
-        f.flush()
+    # DISABLED: Uncomment to enable debug logging
+    # repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # seed_log_file = os.path.join(repo_root, f"gpu_{local_rank}_seed_debug.log")
+    # with open(seed_log_file, "w") as f:
+    #     f.write(f"=== SEED DEBUG LOG GPU {local_rank} - {mode.upper()} MODE ===\n")
+    #     f.flush()
 
     def log_seed(msg):
-        """Log seed synchronization info to file"""
-        with open(seed_log_file, "a") as f:
-            f.write(f"{msg}\n")
-            f.flush()
+        """Log seed synchronization info to file - DISABLED"""
+        pass  # Logging disabled
+        # with open(seed_log_file, "a") as f:
+        #     f.write(f"{msg}\n")
+        #     f.flush()
 
     for r in range(rounds+1):
         round_start_time = time.time()
@@ -855,17 +855,16 @@ def generate_and_save_data(generator, SE, save_dir, rounds, mode, save_frequency
             dialog_data = generate_dialog(complexity=complexity, samples=n_samples, problem_type=problem_type)
 
             # === CRITICAL VERIFICATION: Log dialog info to verify all GPUs generated identical data ===
-            dialog_str = str(dialog_data[0])  # Convert dialog to string for hashing
-            dialog_hash = hash(dialog_str) % (2**32)
-            log_seed(f"[Round {r}] GPU {local_rank} GENERATED DIALOG - x={dialog_data[1]}, y={dialog_data[2]}, hash={dialog_hash}")
-
-            # Tokenize the dialog to see the actual length
-            tokenized = generator.parse_chat(dialog_data[0])
-            if isinstance(tokenized, list):
-                token_length = len(tokenized[0]) if tokenized else 0
-            else:
-                token_length = len(tokenized)
-            log_seed(f"[Round {r}] GPU {local_rank} TOKENIZED LENGTH: {token_length} tokens")
+            # DISABLED: Uncomment to enable debug logging
+            # dialog_str = str(dialog_data[0])
+            # dialog_hash = hash(dialog_str) % (2**32)
+            # log_seed(f"[Round {r}] GPU {local_rank} GENERATED DIALOG - x={dialog_data[1]}, y={dialog_data[2]}, hash={dialog_hash}")
+            # tokenized = generator.parse_chat(dialog_data[0])
+            # if isinstance(tokenized, list):
+            #     token_length = len(tokenized[0]) if tokenized else 0
+            # else:
+            #     token_length = len(tokenized)
+            # log_seed(f"[Round {r}] GPU {local_rank} TOKENIZED LENGTH: {token_length} tokens")
 
             h_stack, correct_vsas = gather_h_stacks(generator, SE, dialog_data, produce_correct_VSA=True)
 
