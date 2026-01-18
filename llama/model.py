@@ -92,19 +92,21 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     )
 
 
-# === GLOBAL FILE LOGGING SETUP ===
+# === GLOBAL FILE LOGGING SETUP - DISABLED ===
 def _get_log_function():
-    """Get file logging function for this GPU"""
-    import os
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log_file = os.path.join(repo_root, f"gpu_{local_rank}_debug.log")
+    """Get file logging function for this GPU - DISABLED"""
+    # DISABLED: Uncomment to enable debug file logging
+    # import os
+    # local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    # repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # log_file = os.path.join(repo_root, f"gpu_{local_rank}_debug.log")
 
     def log(msg):
-        """Write log message to file for this GPU"""
-        with open(log_file, "a") as f:
-            f.write(f"{msg}\n")
-            f.flush()
+        """Write log message to file - DISABLED"""
+        pass  # Logging disabled
+        # with open(log_file, "a") as f:
+        #     f.write(f"{msg}\n")
+        #     f.flush()
     return log
 
 _log = _get_log_function()
