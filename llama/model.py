@@ -430,7 +430,7 @@ class Transformer(nn.Module):
             print(f"[GPU {local_rank}] Step 2: Processing {len(self.layers)} transformer layers...")
 
         for n, layer in enumerate(self.layers):
-            if local_rank == 0 and n % 20 == 0:  # Log every 20 layers
+            if local_rank == 0 and n % 5 == 0:  # Log every 5 layers for better diagnostics
                 print(f"[GPU {local_rank}] Layer {n}/{len(self.layers)} - h.shape={h.shape}")
 
             # Only accumulate h_stack if requested (skip during generation to save memory)
