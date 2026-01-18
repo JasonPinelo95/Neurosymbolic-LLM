@@ -745,17 +745,13 @@ def gather_h_stacks(generator, SE, dialog_data, temperature=0, produce_correct_V
     y = dialog_data[2]
     problem_type = dialog_data[3]
 
-    # Pass the first sample's values (assuming n_samples >= 1)
-    curr_x = x[0] if len(x) > 0 else 0
-    curr_y = y[0] if len(y) > 0 else 0
-    curr_pt = problem_type
-
+    # Pass the complete arrays to episode() (model.forward() expects arrays, not individual values)
     h_stacks, list_of_probs, list_of_logits, out_tokens = episode(generator, dialogs, temperature=temperature,
                                                                   inference_mode=generator.model.forward,
                                                                   max_decoding_length=1,
-                                                                  curr_pt=curr_pt,
-                                                                  curr_x=curr_x,
-                                                                  curr_y=curr_y,
+                                                                  curr_pt=problem_type,
+                                                                  curr_x=x,
+                                                                  curr_y=y,
                                                                   )
 
     # shape of h_stack is [num_layers, batch_size, num_tokens, hidden_dm], per output token
